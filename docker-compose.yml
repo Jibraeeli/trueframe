@@ -1,0 +1,59 @@
+x-app-environment: &app-environment
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_DEFAULT_REGION: eu-west-2
+  # LocalStack accepts any credentials. These are not real keys.
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  S3_ADDRESSING_STYLE: path
+  SCAN_BUCKET: trueframe-uploads
+  SCAN_TABLE: trueframe-scans
+  SCAN_QUEUE_URL: http://localstack:4566/000000000000/trueframe-scans
+
+services:
+  localstack:
+    image: localstack/localstack:4.9
+    environment:
+      SERVICES: s3,sqs,dynamodb
+    ports:
+      - "127.0.0.1:4566:4566"
+    volumes:
+      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/trueframe-ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  api:
+    build:
+      context: .
+      dockerfile: app/api/Dockerfile
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: app/worker/Dockerfile
+      target: runtime
+    environment: *app-environment
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  # Only runs when asked for: docker compose run --rm tests
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: app/worker/Dockerfile
+      target: test

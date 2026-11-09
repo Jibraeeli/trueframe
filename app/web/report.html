@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trust report - TrueFrame</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <p><a href="/">Scan another file</a></p>
+    <h1>Trust report</h1>
+    <p id="filename" class="lead"></p>
+    <p id="status" role="status">Loading...</p>
+
+    <div id="report" hidden>
+      <section id="score-card" class="card">
+        <div id="score"></div>
+        <div>
+          <h2 id="verdict"></h2>
+          <p id="summary"></p>
+        </div>
+      </section>
+
+      <h2>Evidence</h2>
+      <ul id="evidence" class="evidence"></ul>
+
+      <section id="frames-section" hidden>
+        <h2>Most suspicious frames</h2>
+        <div id="frames" class="frames"></div>
+      </section>
+
+      <h2>File details</h2>
+      <dl id="details"></dl>
+
+      <h2>Limits of this report</h2>
+      <ul id="limitations"></ul>
+    </div>
+  </main>
+  <script src="report.js"></script>
+</body>
+</html>

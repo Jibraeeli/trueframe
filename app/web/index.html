@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrueFrame</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>TrueFrame</h1>
+    <p class="lead">Upload an image or video and get a trust report.</p>
+
+    <form id="upload-form">
+      <label id="drop-zone" for="file-input">
+        <span id="drop-text">Choose a file, or drop it here</span>
+        <small>JPEG, PNG, WebP, MP4, MOV or WebM, up to 200 MB</small>
+      </label>
+      <input id="file-input" name="file" type="file" required
+             accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm">
+      <button id="submit" type="submit" disabled>Scan file</button>
+      <p id="message" role="status"></p>
+    </form>
+
+    <p class="note">Files are stored privately and removed after 24 hours. Results are an
+      automated estimate and can be wrong.</p>
+  </main>
+  <script src="upload.js"></script>
+</body>
+</html>
