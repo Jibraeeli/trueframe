@@ -11,7 +11,13 @@ variable "region" {
 }
 
 variable "domain_name" {
-  description = "Domain for HTTPS. Leave empty to serve plain HTTP from the load balancer address."
+  description = "Domain the application is served from"
+  type        = string
+  default     = ""
+}
+
+variable "certificate_arn" {
+  description = "Issued ACM certificate for the domain. Leave empty to serve plain HTTP."
   type        = string
   default     = ""
 }

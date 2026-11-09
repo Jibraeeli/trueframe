@@ -20,6 +20,7 @@ module "edge" {
   vpc_cidr          = module.network.vpc_cidr
   public_subnet_ids = module.network.public_subnet_ids
   domain_name       = var.domain_name
+  certificate_arn   = var.certificate_arn
 }
 
 module "compute" {

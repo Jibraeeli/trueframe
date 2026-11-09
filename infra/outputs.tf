@@ -13,7 +13,7 @@ output "worker_repository_url" {
   value       = module.storage.repository_urls["worker"]
 }
 
-output "name_servers" {
-  description = "Set these at your domain registrar when using a domain"
-  value       = module.edge.name_servers
+output "alb_dns_name" {
+  description = "Point the domain's CNAME record at this address"
+  value       = module.edge.alb_dns_name
 }

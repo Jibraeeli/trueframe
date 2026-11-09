@@ -1,7 +1,7 @@
 # Everything public-facing: load balancer, firewall and, with a domain, HTTPS.
 
 locals {
-  https_enabled = var.domain_name != ""
+  https_enabled = var.certificate_arn != ""
 }
 
 resource "aws_security_group" "alb" {
@@ -91,43 +91,6 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-resource "aws_route53_zone" "main" {
-  count = local.https_enabled ? 1 : 0
-
-  name = var.domain_name
-}
-
-resource "aws_acm_certificate" "main" {
-  count = local.https_enabled ? 1 : 0
-
-  domain_name       = var.domain_name
-  validation_method = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_route53_record" "certificate_validation" {
-  count = local.https_enabled ? 1 : 0
-
-  zone_id         = aws_route53_zone.main[0].zone_id
-  name            = one(aws_acm_certificate.main[0].domain_validation_options).resource_record_name
-  type            = one(aws_acm_certificate.main[0].domain_validation_options).resource_record_type
-  records         = [one(aws_acm_certificate.main[0].domain_validation_options).resource_record_value]
-  ttl             = 60
-  allow_overwrite = true
-}
-
-# Waits until AWS has confirmed ownership of the domain.
-# This only finishes once the registrar points at the name servers above.
-resource "aws_acm_certificate_validation" "main" {
-  count = local.https_enabled ? 1 : 0
-
-  certificate_arn         = aws_acm_certificate.main[0].arn
-  validation_record_fqdns = [aws_route53_record.certificate_validation[0].fqdn]
-}
-
 resource "aws_lb_listener" "https" {
   count = local.https_enabled ? 1 : 0
 
@@ -135,25 +98,11 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate_validation.main[0].certificate_arn
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
-  }
-}
-
-resource "aws_route53_record" "app" {
-  count = local.https_enabled ? 1 : 0
-
-  zone_id = aws_route53_zone.main[0].zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
-    evaluate_target_health = true
   }
 }
 
