@@ -1,5 +1,6 @@
 # Converts the model to ONNX. Nothing from this stage ships except that file.
-FROM python:3.12-slim AS model
+# ONNX files work on any CPU, so this runs natively even when building for ARM.
+FROM --platform=$BUILDPLATFORM python:3.12-slim AS model
 RUN pip install --no-cache-dir torch==2.8.0 torchvision==0.23.0 \
         --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir timm==1.0.19 safetensors==0.8.0 onnx==1.23.2 \

@@ -5,3 +5,10 @@ __pycache__/
 .env
 samples/
 *.onnx
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan

@@ -137,7 +137,7 @@ Images take about 0.4 seconds to scan on a laptop CPU.
 - **The samples are small.** Most of the fake faces come from one generator, and the test videos are slideshows of still images rather than real footage.
 - **Audio is not analysed.**
 - **No C2PA trust list is configured yet,** so signatures are checked for integrity but signers are not verified.
-- **Malware scanning and automatic deletion of uploads** arrive with real AWS in the next stage.
+- **Uploads are not scanned for malware yet.** In the local version they are also not deleted automatically. The AWS version deletes them after one day.
 
 ## Repository structure
 
