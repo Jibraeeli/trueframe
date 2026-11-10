@@ -21,3 +21,7 @@ variable "domain_name" {
 variable "certificate_arn" {
   type = string
 }
+
+variable "alert_topic_arn" {
+  type = string
+}

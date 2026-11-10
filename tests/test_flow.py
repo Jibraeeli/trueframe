@@ -1,6 +1,8 @@
 """The whole journey: upload, queue, worker, report."""
 
 import json
+import logging
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -103,6 +105,21 @@ def test_upload_to_report(client, stack, jpeg_bytes):
     frame = client.get(f"/api/scans/{scan_id}/frames/0")
     assert frame.status_code == 200
     assert frame.headers["content-type"] == "image/jpeg"
+
+
+def test_finished_scan_logs_the_timings_the_dashboard_reads(client, stack, jpeg_bytes, caplog):
+    upload(client, jpeg_bytes)
+
+    with caplog.at_level(logging.INFO, logger="trueframe.worker"):
+        make_worker(stack).poll_once(wait_seconds=0)
+
+    assert any(
+        re.fullmatch(
+            r"Scan \w+ complete in \d+\.\d seconds after \d+\.\d seconds queued, trust score \d+",
+            record.getMessage(),
+        )
+        for record in caplog.records
+    )
 
 
 def test_video_upload_to_report(client, stack, sample_video):

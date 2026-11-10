@@ -25,3 +25,7 @@ output "alb_dns_name" {
 output "app_url" {
   value = local.https_enabled ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
 }
+
+output "alb_arn_suffix" {
+  value = aws_lb.main.arn_suffix
+}

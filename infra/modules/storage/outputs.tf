@@ -25,3 +25,11 @@ output "queue_arn" {
 output "repository_urls" {
   value = { for key, repo in aws_ecr_repository.images : key => repo.repository_url }
 }
+
+output "queue_name" {
+  value = aws_sqs_queue.scans.name
+}
+
+output "dead_letter_queue_name" {
+  value = aws_sqs_queue.dead_letter.name
+}

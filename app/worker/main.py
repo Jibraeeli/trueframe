@@ -59,7 +59,8 @@ class Worker:
             QueueUrl=self.settings.queue_url, ReceiptHandle=message["ReceiptHandle"]
         )
 
-    def _process(self, job: dict) -> None:
+    def _process(self, job: dict, queued_seconds: float) -> None:
+        started = time.monotonic()
         scan_id = job["scan_id"]
         scans.mark_processing(self.aws.table, scan_id)
         with tempfile.TemporaryDirectory(prefix="scan-") as tmp:
@@ -83,10 +84,20 @@ class Worker:
                     ExtraArgs={"ContentType": "image/jpeg"},
                 )
         scans.mark_complete(self.aws.table, scan_id, analysis.report)
-        log.info("Scan %s complete, trust score %s", scan_id, analysis.report["trust_score"])
+        # CloudWatch reads the two timings from this exact layout. See modules/ops.
+        log.info(
+            "Scan %s complete in %.1f seconds after %.1f seconds queued, trust score %s",
+            scan_id,
+            time.monotonic() - started,
+            queued_seconds,
+            analysis.report["trust_score"],
+        )
 
     def handle(self, message: dict) -> None:
-        attempt = int(message.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+        attributes = message.get("Attributes", {})
+        attempt = int(attributes.get("ApproximateReceiveCount", "1"))
+        sent_ms = int(attributes.get("SentTimestamp", time.time() * 1000))
+        queued_seconds = max(0.0, time.time() - sent_ms / 1000)
         scan_id = None
         try:
             job = json.loads(message["Body"])
@@ -96,7 +107,7 @@ class Worker:
             if scan is None or scan["status"] in (scans.COMPLETE, scans.FAILED):
                 self._delete(message)
                 return
-            self._process(job)
+            self._process(job, queued_seconds)
         except UnprocessableMedia as exc:
             log.warning("Scan %s rejected: %s", scan_id, exc)
             scans.mark_failed(self.aws.table, scan_id, str(exc))
@@ -113,7 +124,7 @@ class Worker:
             QueueUrl=self.settings.queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=wait_seconds,
-            AttributeNames=["ApproximateReceiveCount"],
+            AttributeNames=["ApproximateReceiveCount", "SentTimestamp"],
         )
         messages = response.get("Messages", [])
         for message in messages:
