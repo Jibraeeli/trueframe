@@ -148,6 +148,7 @@ data "aws_iam_policy_document" "deploy" {
     #checkov:skip=CKV_AWS_111:Terraform has to manage these services in full. The statement is limited to one region and the role to the main branch.
     #checkov:skip=CKV_AWS_356:Many of these actions cannot be limited by resource, and resource names are not known before creation.
     actions = [
+      "application-autoscaling:*",
       "cloudwatch:*",
       "dynamodb:*",
       "ec2:*",
@@ -208,6 +209,18 @@ data "aws_iam_policy_document" "deploy" {
       "iam:UpdateAssumeRolePolicy",
     ]
     resources = ["${local.role_prefix}*"]
+  }
+
+  statement {
+    sid       = "LetAutoscalingCreateItsOwnRole"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["arn:aws:iam::*:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values   = ["ecs.application-autoscaling.amazonaws.com"]
+    }
   }
 
   statement {

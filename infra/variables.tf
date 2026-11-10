@@ -56,3 +56,15 @@ variable "endpoint_az_count" {
     error_message = "endpoint_az_count must be 1 or 2."
   }
 }
+
+variable "worker_max_count" {
+  description = "The most workers autoscaling may run."
+  type        = number
+  default     = 3
+}
+
+variable "idle_minutes_before_scale_in" {
+  description = "Minutes the queue must stay empty before workers are removed."
+  type        = number
+  default     = 10
+}

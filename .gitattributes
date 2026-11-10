@@ -2,3 +2,5 @@
 *.sh text eol=lf
 *.py text eol=lf
 Dockerfile text eol=lf
+# Read inside Linux containers, where Windows line endings break it.
+*.conf text eol=lf

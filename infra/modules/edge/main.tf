@@ -180,6 +180,7 @@ resource "aws_cloudwatch_metric_alarm" "api_errors" {
   threshold           = 5
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.alert_topic_arn]
 
   dimensions = {
     LoadBalancer = aws_lb.main.arn_suffix

@@ -338,6 +338,11 @@ resource "aws_ecs_service" "worker" {
     rollback = true
   }
 
+  # The count belongs to autoscaling after the first deploy.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.worker.id]
