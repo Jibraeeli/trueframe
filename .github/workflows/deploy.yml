@@ -1,0 +1,243 @@
+name: Deploy
+
+# Started by hand from main, because the environment is only up while testing.
+# It creates the environment if it does not exist, otherwise it updates it.
+on:
+  workflow_dispatch:
+    inputs:
+      api_count:
+        description: Number of API tasks
+        type: number
+        default: 1
+      worker_count:
+        description: Number of worker tasks
+        type: number
+        default: 1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trueframe-environment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-2
+  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+  TF_VAR_certificate_arn: ${{ secrets.CERTIFICATE_ARN }}
+
+jobs:
+  registry:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      images: ${{ steps.missing.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/trueframe-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      # Images need somewhere to go before the services can start. Limiting
+      # this to storage leaves any running services alone.
+      - name: Create the image registries
+        working-directory: infra
+        run: terraform apply -auto-approve -input=false -target=module.storage
+
+      # Tags cannot be overwritten, so a re-run must not push the same one.
+      - name: Find which images still need building
+        id: missing
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          images=()
+          for image in api worker; do
+            if ! aws ecr describe-images --repository-name "trueframe-$image" \
+                --image-ids "imageTag=$TAG" > /dev/null 2>&1; then
+              images+=("\"$image\"")
+            fi
+          done
+          echo "images=[$(IFS=,; echo "${images[*]}")]" >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: registry
+    if: needs.registry.outputs.images != '[]'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: ${{ fromJSON(needs.registry.outputs.images) }}
+    env:
+      TAG: ${{ github.sha }}
+      DOCKERFILE: app/${{ matrix.image }}/Dockerfile
+      # The worker Dockerfile also has a test stage, which must not ship.
+      TARGET: ${{ matrix.image == 'worker' && 'runtime' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          target: ${{ env.TARGET }}
+          platforms: linux/arm64
+          provenance: false
+          load: true
+          tags: trueframe-${{ matrix.image }}:scan
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      # The scanner runs before AWS credentials exist in this job, so a
+      # compromised scanner would have nothing to steal.
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: trueframe-${{ matrix.image }}:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate the SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: trueframe-${{ matrix.image }}:scan
+          format: spdx-json
+          output: sbom.spdx.json
+          exit-code: "0"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/trueframe-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          target: ${{ env.TARGET }}
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/trueframe-${{ matrix.image }}:${{ env.TAG }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      # Signing is keyless: the workflow's own GitHub identity is the proof,
+      # so there is no private key to store or leak.
+      - name: Sign the image and attach the SBOM
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/trueframe-${{ matrix.image }}@${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMAGE"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$IMAGE"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ matrix.image }}
+          path: sbom.spdx.json
+          retention-days: 30
+
+  release:
+    needs: [registry, images]
+    # Still runs when every image already existed and the images job was skipped.
+    if: ${{ !cancelled() && needs.registry.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.images.result) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_image_tag: ${{ github.sha }}
+      TF_VAR_api_desired_count: ${{ inputs.api_count }}
+      TF_VAR_worker_desired_count: ${{ inputs.worker_count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/trueframe-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      - name: Refuse any image this workflow did not sign
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/deploy.yml@refs/heads/main
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          for image in api worker; do
+            ref="$REGISTRY/trueframe-$image:$TF_VAR_image_tag"
+            cosign verify --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER" "$ref" > /dev/null
+            cosign verify-attestation --type spdxjson --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER" "$ref" > /dev/null
+            echo "$image: signature and SBOM verified"
+          done
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Deploy
+        working-directory: infra
+        run: terraform apply -auto-approve -input=false
+
+      # A rolled-back service still looks stable, so check what is really live.
+      - name: Confirm the new version is live
+        run: scripts/verify-release.sh "$TF_VAR_image_tag"
+
+      - name: Check the health endpoint through the load balancer
+        working-directory: infra
+        run: |
+          alb="$(terraform output -raw alb_dns_name)"
+          # -k because the certificate is for the domain, not this address.
+          curl --fail --silent --show-error --insecure --max-time 10 \
+            --retry 10 --retry-delay 6 --retry-all-errors "https://$alb/health"
+          {
+            echo "### Deployed $TF_VAR_image_tag"
+            echo "Point the \`trueframe\` CNAME at Wix to \`$alb\` if the environment was just created."
+          } >> "$GITHUB_STEP_SUMMARY"

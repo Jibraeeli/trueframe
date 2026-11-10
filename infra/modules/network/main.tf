@@ -3,6 +3,7 @@
 # That removes the need for a NAT gateway.
 
 data "aws_availability_zones" "available" {
+  #checkov:skip=CKV_AWS_394:Only the first two zones are used, and the environment is rebuilt from scratch each time.
   state = "available"
 }
 
@@ -18,6 +19,12 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = { Name = var.name }
+}
+
+# Every VPC comes with a default security group that allows traffic between
+# its members. Nothing should use it, so this empties it.
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
 }
 
 resource "aws_internet_gateway" "main" {

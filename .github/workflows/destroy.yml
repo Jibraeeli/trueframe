@@ -1,0 +1,51 @@
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type destroy to remove the environment
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trueframe-environment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  destroy:
+    if: inputs.confirm == 'destroy'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+      TF_VAR_certificate_arn: ${{ secrets.CERTIFICATE_ARN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/trueframe-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Destroy
+        working-directory: infra
+        run: terraform destroy -auto-approve -input=false
+
+      - name: Reminder
+        run: echo "Delete the \`trueframe\` CNAME at Wix. Keep the certificate validation record." >> "$GITHUB_STEP_SUMMARY"

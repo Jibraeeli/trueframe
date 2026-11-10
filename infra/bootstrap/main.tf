@@ -27,6 +27,7 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "state" {
+  #checkov:skip=CKV2_AWS_61:Old state versions are kept on purpose so a damaged state file can be restored.
   # Bucket names are global, so the account ID keeps this one unique.
   bucket = "trueframe-tfstate-${data.aws_caller_identity.current.account_id}"
 

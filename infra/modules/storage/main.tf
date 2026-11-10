@@ -1,6 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "uploads" {
+  #checkov:skip=CKV_AWS_21:Versioning would keep user files after the one-day deletion.
   bucket        = "${var.name}-uploads-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
@@ -83,6 +84,7 @@ resource "aws_sqs_queue" "scans" {
 }
 
 resource "aws_dynamodb_table" "scans" {
+  #checkov:skip=CKV_AWS_28:Scan records expire after one day, so there is nothing worth restoring.
   name         = "${var.name}-scans"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "scan_id"
@@ -122,11 +124,12 @@ resource "aws_ecr_lifecycle_policy" "images" {
   policy = jsonencode({
     rules = [{
       rulePriority = 1
-      description  = "Keep the five most recent images"
+      # Signatures and SBOMs are stored as images too, about three per release.
+      description = "Keep roughly the five most recent releases"
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
-        countNumber = 5
+        countNumber = 15
       }
       action = { type = "expire" }
     }]

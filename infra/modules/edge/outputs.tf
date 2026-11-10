@@ -6,6 +6,18 @@ output "target_group_arn" {
   value = aws_lb_target_group.api.arn
 }
 
+output "green_target_group_arn" {
+  value = aws_lb_target_group.api_green.arn
+}
+
+output "production_listener_rule_arn" {
+  value = aws_lb_listener_rule.production.arn
+}
+
+output "rollback_alarm_name" {
+  value = aws_cloudwatch_metric_alarm.api_errors.alarm_name
+}
+
 output "alb_dns_name" {
   value = aws_lb.main.dns_name
 }
