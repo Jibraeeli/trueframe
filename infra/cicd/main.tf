@@ -40,10 +40,12 @@ variable "region" {
   default     = "eu-west-2"
 }
 
-variable "github_repository" {
-  description = "Repository allowed to use these roles, as owner/name"
+# GitHub identifies the repository by permanent numeric IDs as well as its
+# name, so a deleted and re-created repository of the same name is refused.
+variable "github_subject_prefix" {
+  description = "Start of the subject in GitHub's token for the repository allowed to use these roles"
   type        = string
-  default     = "Jibraeeli/trueframe"
+  default     = "repo:Jibraeeli@234180032/trueframe@1451800159"
 }
 
 data "aws_caller_identity" "current" {}
@@ -77,7 +79,7 @@ data "aws_iam_policy_document" "trust_pull_requests" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:pull_request"]
+      values   = ["${var.github_subject_prefix}:pull_request"]
     }
   }
 }
@@ -102,7 +104,7 @@ data "aws_iam_policy_document" "trust_main_branch" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = ["${var.github_subject_prefix}:ref:refs/heads/main"]
     }
   }
 }
