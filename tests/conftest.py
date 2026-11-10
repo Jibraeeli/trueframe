@@ -26,6 +26,17 @@ class FakeDetector:
         return self.probability
 
 
+class FakeScanner:
+    """Passes every file unless told to raise an error instead."""
+
+    def __init__(self, error: Exception | None = None):
+        self.error = error
+
+    def check(self, path: Path) -> None:
+        if self.error:
+            raise self.error
+
+
 @pytest.fixture
 def jpeg_bytes() -> bytes:
     buffer = io.BytesIO()

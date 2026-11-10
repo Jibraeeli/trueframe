@@ -9,7 +9,9 @@ from app.api.main import app
 from app.shared import scans
 from app.worker.explainer import TemplateExplainer
 from app.worker.main import GENERIC_FAILURE, MAX_ATTEMPTS, Worker
-from tests.conftest import FakeDetector
+from app.worker.errors import UnprocessableMedia
+from app.worker.scanner import MALWARE_MESSAGE, ScannerUnavailable
+from tests.conftest import FakeDetector, FakeScanner
 
 
 class BrokenDetector(FakeDetector):
@@ -23,9 +25,40 @@ def client(stack):
         yield test_client
 
 
-def make_worker(stack, detector=None) -> Worker:
+class ExplodingDetector(FakeDetector):
+    """Fails the test if an upload reaches the model when it should not."""
+
+    def fake_probability(self, image_path):
+        raise AssertionError("the file should never have been analysed")
+
+
+def make_worker(stack, detector=None, scanner=None) -> Worker:
     aws, settings = stack
-    return Worker(aws, settings, detector or FakeDetector(), TemplateExplainer())
+    return Worker(
+        aws, settings, detector or FakeDetector(), TemplateExplainer(), scanner or FakeScanner()
+    )
+
+
+def test_malware_is_rejected_before_analysis(client, stack, jpeg_bytes):
+    scan_id = upload(client, jpeg_bytes).json()["scan_id"]
+
+    scanner = FakeScanner(UnprocessableMedia(MALWARE_MESSAGE))
+    make_worker(stack, ExplodingDetector(), scanner).poll_once(wait_seconds=0)
+
+    result = client.get(f"/api/scans/{scan_id}").json()
+    assert result["status"] == "failed"
+    assert result["error"] == MALWARE_MESSAGE
+    assert queue_size(stack) == 0
+
+
+def test_file_is_not_analysed_if_the_scanner_gives_no_answer(client, stack, jpeg_bytes):
+    scan_id = upload(client, jpeg_bytes).json()["scan_id"]
+
+    scanner = FakeScanner(ScannerUnavailable("daemon down"))
+    make_worker(stack, ExplodingDetector(), scanner).poll_once(wait_seconds=0)
+
+    assert client.get(f"/api/scans/{scan_id}").json()["status"] == "processing"
+    assert queue_size(stack) == 1
 
 
 def upload(client, content: bytes, name: str = "photo.jpg"):
