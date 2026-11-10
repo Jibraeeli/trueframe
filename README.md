@@ -4,6 +4,8 @@ Upload an image or video and get a trust report: a 0 to 100 score, the evidence 
 
 It combines signed content credentials, file metadata and a detection model, because no single check is reliable enough on its own. The project grew out of my [research into deepfakes and cybersecurity](https://github.com/Jibraeeli/deepfakes-cybersecurity-research).
 
+**[Watch the demo video](https://youtu.be/GY35aBCQ9G0)**
+
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Containers-Docker-2496ED?logo=docker&logoColor=white)
@@ -348,7 +350,7 @@ trueframe/
 - [x] Stage 3: CI/CD and security (GitHub Actions with OIDC, Trivy, Checkov, signed images, SBOMs, blue/green deployments)
 - [x] Stage 4: malware scanning of every upload with ClamAV, plus a full evaluation on public datasets
 - [x] Stage 5: operations (scale to zero, dashboards, alarms, chaos testing, budget alerts)
-- [ ] Demo video
+- [x] Demo video
 
 ## What I would improve next
 
