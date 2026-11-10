@@ -34,6 +34,22 @@ variable "target_group_arn" {
   type = string
 }
 
+variable "green_target_group_arn" {
+  type = string
+}
+
+variable "production_listener_rule_arn" {
+  type = string
+}
+
+variable "rollback_alarm_name" {
+  type = string
+}
+
+variable "bake_time_minutes" {
+  type = number
+}
+
 variable "api_image" {
   type = string
 }

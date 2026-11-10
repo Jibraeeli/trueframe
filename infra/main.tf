@@ -45,4 +45,9 @@ module "compute" {
   table_arn               = module.storage.table_arn
   queue_url               = module.storage.queue_url
   queue_arn               = module.storage.queue_arn
+
+  green_target_group_arn       = module.edge.green_target_group_arn
+  production_listener_rule_arn = module.edge.production_listener_rule_arn
+  rollback_alarm_name          = module.edge.rollback_alarm_name
+  bake_time_minutes            = var.bake_time_minutes
 }

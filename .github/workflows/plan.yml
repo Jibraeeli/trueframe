@@ -1,0 +1,83 @@
+name: Terraform plan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "infra/**"
+      - ".github/workflows/plan.yml"
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  plan:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    env:
+      TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+      TF_VAR_certificate_arn: ${{ secrets.CERTIFICATE_ARN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/trueframe-github-plan
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Plan
+        working-directory: infra
+        run: |
+          terraform plan -lock=false -input=false -no-color | tee plan.txt
+          grep -E '^(Plan:|No changes\.)' plan.txt > summary.txt
+
+      # Only the one-line summary goes on the pull request, because the full
+      # plan contains resource identifiers.
+      - name: Comment the result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body-file infra/summary.txt
+
+  cost:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event.action != 'closed'
+        with:
+          persist-credentials: false
+          path: head
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event.action != 'closed'
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: base
+
+      - name: Comment the cost difference
+        if: env.INFRACOST_API_KEY != ''
+        uses: infracost/actions/diff@a5783eb98adc93aa7a0049fce0abb06fdd30770a # v5.0.1
+        with:
+          api-key: ${{ env.INFRACOST_API_KEY }}
+          base-path: base
+          head-path: head

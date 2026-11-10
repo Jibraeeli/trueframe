@@ -8,6 +8,7 @@ resource "aws_security_group" "alb" {
   name_prefix = "${var.name}-alb-"
   description = "Public web traffic to the load balancer"
   vpc_id      = var.vpc_id
+  #checkov:skip=CKV_AWS_260:Port 80 only exists to redirect visitors to HTTPS.
 
   ingress {
     description = "HTTP"
@@ -41,6 +42,8 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_lb" "main" {
+  #checkov:skip=CKV_AWS_150:The environment is destroyed after every test, so deletion protection would block that.
+  #checkov:skip=CKV2_AWS_76:The attached WAF already uses AWSManagedRulesKnownBadInputsRuleSet, which covers Log4j.
   name                       = var.name
   load_balancer_type         = "application"
   subnets                    = var.public_subnet_ids
@@ -50,6 +53,7 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "api" {
+  #checkov:skip=CKV_AWS_378:HTTPS ends at the load balancer. This hop stays inside the private VPC.
   name_prefix          = "tf-api"
   port                 = 8080
   protocol             = "HTTP"
@@ -70,7 +74,32 @@ resource "aws_lb_target_group" "api" {
   }
 }
 
+# The second half of blue/green. A new version starts here, out of the way,
+# and only receives real traffic once it passes its health checks.
+resource "aws_lb_target_group" "api_green" {
+  #checkov:skip=CKV_AWS_378:HTTPS ends at the load balancer. This hop stays inside the private VPC.
+  name_prefix          = "tf-grn"
+  port                 = 8080
+  protocol             = "HTTP"
+  target_type          = "ip"
+  vpc_id               = var.vpc_id
+  deregistration_delay = 30
+
+  health_check {
+    path                = "/health"
+    matcher             = "200"
+    interval            = 15
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "aws_lb_listener" "http" {
+  #checkov:skip=CKV_AWS_2:With a certificate this listener only redirects to HTTPS. Plain HTTP is for testing without a domain.
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
@@ -103,6 +132,57 @@ resource "aws_lb_listener" "https" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
+  }
+}
+
+# ECS moves traffic between the two target groups by rewriting this rule, so
+# Terraform must not put the weights back after a deployment.
+resource "aws_lb_listener_rule" "production" {
+  listener_arn = local.https_enabled ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
+  priority     = 100
+
+  action {
+    type = "forward"
+
+    forward {
+      target_group {
+        arn    = aws_lb_target_group.api.arn
+        weight = 100
+      }
+
+      target_group {
+        arn    = aws_lb_target_group.api_green.arn
+        weight = 0
+      }
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [action]
+  }
+}
+
+# While a new version is baking, a burst of server errors rolls it back.
+resource "aws_cloudwatch_metric_alarm" "api_errors" {
+  alarm_name          = "${var.name}-api-5xx"
+  alarm_description   = "The API is returning server errors through the load balancer"
+  namespace           = "AWS/ApplicationELB"
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 5
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
   }
 }
 

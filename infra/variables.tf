@@ -40,6 +40,12 @@ variable "worker_desired_count" {
   default     = 0
 }
 
+variable "bake_time_minutes" {
+  description = "How long the old API version is kept running after traffic moves, ready to roll back to"
+  type        = number
+  default     = 3
+}
+
 variable "endpoint_az_count" {
   description = "Availability zones that hold interface endpoints. 1 is cheaper, 2 survives a zone failure."
   type        = number

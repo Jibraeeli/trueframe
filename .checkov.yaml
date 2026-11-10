@@ -1,0 +1,34 @@
+# Checks that do not fit this project, each with the reason. Findings that
+# apply to one resource only are skipped on that resource instead.
+skip-check:
+  # AWS-managed encryption is on everywhere. Customer-managed KMS keys cost
+  # about $1 a month each and add nothing for a single-account demo.
+  - CKV_AWS_119 # DynamoDB
+  - CKV_AWS_136 # ECR
+  - CKV_AWS_145 # S3
+  - CKV_AWS_158 # CloudWatch logs
+
+  # Files and records are deleted after one day, so a second region would
+  # only keep extra copies of user uploads.
+  - CKV_AWS_144
+
+  # The environment exists for a few hours at a time. Access, flow and WAF
+  # logs would add storage cost without anyone to review them. Stage 5
+  # covers monitoring.
+  - CKV_AWS_18 # S3 access logs
+  - CKV_AWS_91 # load balancer access logs
+  - CKV2_AWS_11 # VPC flow logs
+  - CKV2_AWS_31 # WAF logs
+  - CKV2_AWS_62 # S3 event notifications
+  - CKV_AWS_65 # Container Insights is charged per metric
+
+  # Seven days is deliberate, since logs can reference user scans.
+  - CKV_AWS_338
+
+  # ECS uses the load balancer's health check and Compose defines its own.
+  # The worker has no port to check.
+  - CKV_DOCKER_2
+
+  # Manual inputs only set task counts and confirm a destroy. They never
+  # reach the image build.
+  - CKV_GHA_7

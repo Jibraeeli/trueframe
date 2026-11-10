@@ -118,6 +118,28 @@ resource "aws_iam_role_policy" "worker" {
   policy = data.aws_iam_policy_document.worker.json
 }
 
+# Lets ECS switch the load balancer between versions during a deployment.
+data "aws_iam_policy_document" "ecs_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "load_balancing" {
+  name               = "${var.name}-ecs-load-balancing"
+  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "load_balancing" {
+  role       = aws_iam_role.load_balancing.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers"
+}
+
 resource "aws_security_group" "api" {
   name_prefix = "${var.name}-api-"
   description = "API tasks"
@@ -253,9 +275,25 @@ resource "aws_ecs_service" "api" {
   launch_type          = "FARGATE"
   force_new_deployment = true
 
+  # Terraform waits for the whole deployment, including the bake time.
+  wait_for_steady_state = true
+
+  deployment_configuration {
+    strategy             = "BLUE_GREEN"
+    bake_time_in_minutes = var.bake_time_minutes
+  }
+
+  # Rolls back if the new tasks never become healthy.
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  # Rolls back if the new tasks are healthy but start failing real requests.
+  alarms {
+    alarm_names = [var.rollback_alarm_name]
+    enable      = true
+    rollback    = true
   }
 
   network_configuration {
@@ -268,7 +306,21 @@ resource "aws_ecs_service" "api" {
     target_group_arn = var.target_group_arn
     container_name   = "api"
     container_port   = 8080
+
+    advanced_configuration {
+      alternate_target_group_arn = var.green_target_group_arn
+      production_listener_rule   = var.production_listener_rule_arn
+      role_arn                   = aws_iam_role.load_balancing.arn
+    }
   }
+
+  # After each deployment ECS swaps which target group is live. Without this,
+  # the next terraform apply would try to swap them back.
+  lifecycle {
+    ignore_changes = [load_balancer]
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.load_balancing]
 }
 
 resource "aws_ecs_service" "worker" {
@@ -278,6 +330,8 @@ resource "aws_ecs_service" "worker" {
   desired_count        = var.worker_desired_count
   launch_type          = "FARGATE"
   force_new_deployment = true
+
+  wait_for_steady_state = true
 
   deployment_circuit_breaker {
     enable   = true
