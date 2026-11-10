@@ -22,6 +22,7 @@ from app.worker.detector import Detector, OnnxDetector
 from app.worker.errors import UnprocessableMedia
 from app.worker.explainer import Explainer, TemplateExplainer
 from app.worker.pipeline import analyse
+from app.worker.scanner import ClamdScanner, Scanner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("trueframe.worker")
@@ -34,11 +35,19 @@ GENERIC_FAILURE = "Something went wrong while analysing this file."
 
 
 class Worker:
-    def __init__(self, aws: Aws, settings: Settings, detector: Detector, explainer: Explainer):
+    def __init__(
+        self,
+        aws: Aws,
+        settings: Settings,
+        detector: Detector,
+        explainer: Explainer,
+        scanner: Scanner,
+    ):
         self.aws = aws
         self.settings = settings
         self.detector = detector
         self.explainer = explainer
+        self.scanner = scanner
         self.stopping = False
 
     def request_stop(self, *_: object) -> None:
@@ -57,6 +66,7 @@ class Worker:
             workdir = Path(tmp)
             source = workdir / "source"
             self.aws.s3.download_file(self.settings.bucket, job["s3_key"], str(source))
+            self.scanner.check(source)
             analysis = analyse(
                 source,
                 job["media_type"],
@@ -123,15 +133,21 @@ class Worker:
 
 def main() -> None:
     settings = Settings.from_env()
+    scanner = ClamdScanner()
+    scanner.start()
     worker = Worker(
         connect(settings),
         settings,
         OnnxDetector(os.environ["MODEL_PATH"]),
         TemplateExplainer(),
+        scanner,
     )
     signal.signal(signal.SIGTERM, worker.request_stop)
     signal.signal(signal.SIGINT, worker.request_stop)
-    worker.run()
+    try:
+        worker.run()
+    finally:
+        scanner.stop()
 
 
 if __name__ == "__main__":

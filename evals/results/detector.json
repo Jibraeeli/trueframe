@@ -1,0 +1,103 @@
+{
+  "model": "Community Forensics ViT-S 384",
+  "per_class_limit": 500,
+  "seed": 20261110,
+  "datasets": {
+    "stylegan": {
+      "what": "Fully AI-generated faces (StyleGAN) against real photos",
+      "fakes": 500,
+      "reals": 500,
+      "unreadable": 0,
+      "auc": 0.9992,
+      "fakes_flagged": {
+        "count": 499,
+        "rate": 0.998,
+        "low_95": 0.9888,
+        "high_95": 0.9996
+      },
+      "fakes_given_all_clear": {
+        "count": 0,
+        "rate": 0.0,
+        "low_95": 0.0,
+        "high_95": 0.0076
+      },
+      "reals_wrongly_flagged": {
+        "count": 11,
+        "rate": 0.022,
+        "low_95": 0.0123,
+        "high_95": 0.039
+      },
+      "reals_given_all_clear": {
+        "count": 485,
+        "rate": 0.97,
+        "low_95": 0.9511,
+        "high_95": 0.9817
+      },
+      "seconds": 259
+    },
+    "celebdf": {
+      "what": "Frames from manipulated celebrity videos against real ones",
+      "fakes": 500,
+      "reals": 180,
+      "unreadable": 0,
+      "auc": 0.7055,
+      "fakes_flagged": {
+        "count": 2,
+        "rate": 0.004,
+        "low_95": 0.0011,
+        "high_95": 0.0145
+      },
+      "fakes_given_all_clear": {
+        "count": 497,
+        "rate": 0.994,
+        "low_95": 0.9825,
+        "high_95": 0.998
+      },
+      "reals_wrongly_flagged": {
+        "count": 0,
+        "rate": 0.0,
+        "low_95": 0.0,
+        "high_95": 0.0209
+      },
+      "reals_given_all_clear": {
+        "count": 180,
+        "rate": 1.0,
+        "low_95": 0.9791,
+        "high_95": 1.0
+      },
+      "seconds": 173
+    },
+    "faceswap": {
+      "what": "Face-swapped images, fakes only, labelled from file names",
+      "fakes": 500,
+      "reals": 0,
+      "unreadable": 0,
+      "auc": null,
+      "fakes_flagged": {
+        "count": 8,
+        "rate": 0.016,
+        "low_95": 0.0081,
+        "high_95": 0.0313
+      },
+      "fakes_given_all_clear": {
+        "count": 489,
+        "rate": 0.978,
+        "low_95": 0.961,
+        "high_95": 0.9877
+      },
+      "reals_wrongly_flagged": {
+        "count": 0,
+        "rate": null,
+        "low_95": 0.0,
+        "high_95": 0.0
+      },
+      "reals_given_all_clear": {
+        "count": 0,
+        "rate": null,
+        "low_95": 0.0,
+        "high_95": 0.0
+      },
+      "seconds": 130
+    }
+  }
+}

@@ -49,7 +49,7 @@ The AWS environment is built on demand and destroyed after testing to avoid runn
 1. The API checks the file type from its first bytes, since a filename can say anything.
 2. The file goes to S3 under a random ID, and DynamoDB records the scan as queued.
 3. The API puts a job on the SQS queue and replies immediately.
-4. The worker takes the job and runs the checks.
+4. The worker takes the job, scans the file for malware with ClamAV and runs the checks. A flagged file is rejected and never analysed.
 5. The report is saved to DynamoDB, and the queue message is deleted only after success.
 6. The report page polls the API until the result is ready.
 
@@ -191,6 +191,27 @@ These were run through the full upload, queue, worker and report path, on a sepa
 
 Images take about 0.4 seconds to scan on a laptop CPU.
 
+### Accuracy on public datasets
+
+I then measured the detector alone on held-out splits of three public datasets, using the real scoring rule and single images. Run it with `evals/detector_eval.py`. The raw figures are in `evals/results/detector.json`.
+
+| Dataset | Images | AUC | Fakes flagged | Fakes given "no signs found" | Real images wrongly flagged |
+|---|---|---|---|---|---|
+| [140k Real and Fake Faces](https://huggingface.co/datasets/TheKernel01/140k-Real-and-Fake-Faces) (StyleGAN) | 500 fake, 500 real | 0.999 | 99.8% | 0% | 2.2% (1.2 to 3.9) |
+| [Celeb-DF image copy](https://huggingface.co/datasets/thenewsupercell/celeb-df-image-dataset) (manipulated video frames) | 500 fake, 180 real | 0.71 | 0.4% (0.1 to 1.5) | 99.4% | 0% (0 to 2.1) |
+| [Face swap set](https://huggingface.co/datasets/kenjon/deep-fake-face-swap) (fakes only) | 500 fake | not possible | 1.6% (0.8 to 3.1) | 97.8% | not possible |
+
+Figures in brackets are 95% ranges.
+
+**What this shows:** the detector works on fully AI-generated faces and almost never flags a face swap or a manipulated video frame. On those, nearly every fake gets the most reassuring verdict the system can give. A clean report says very little about this kind of deepfake.
+
+**How far to trust these numbers:**
+
+- The StyleGAN result is better than the end-to-end test above, where 41 of 60 AI-generated faces were flagged. I have not explained that gap, and the model may have trained on this generator, so 99.8% should not be read as its general accuracy.
+- The Celeb-DF and face swap files are community uploads with little documentation. The face swap labels come from file names.
+- Frames from the same video are probably not independent, so the Celeb-DF ranges are likely too narrow.
+- The thresholds were not tuned on this data. Tuning them on it would make the numbers look better without showing the detector had improved.
+
 ## Key decisions
 
 | Decision | Why |
@@ -208,16 +229,20 @@ Images take about 0.4 seconds to scan on a laptop CPU.
 | Image scan runs before AWS credentials exist | A compromised scanner would have nothing to steal. |
 | Keyless image signing | The workflow's GitHub identity is the proof, so there is no private key to protect. |
 | Some Checkov findings are accepted | Each one has a written reason in `.checkov.yaml` or next to the resource. |
+| Malware scan runs before any parser | Decoding a hostile file is the risky step, so the scan has to come first. |
+| No scanner answer means no analysis | If ClamAV is down or times out, the job goes back on the queue rather than skipping the check. |
+| ClamAV signatures are baked into the image | The worker has no internet access, so it cannot download updates at runtime. |
 
 ## Known limitations
 
-- **Face swaps are the biggest gap.** The detector caught only 2% of the face-swap and edited images in testing, and no model tried so far reached a useful level.
+- **Face swaps and manipulated video are the biggest gap.** The detector flagged under 2% of them across two public datasets and gave almost all of the rest "no signs found". No model tried so far reached a useful level.
 - **Around 1 in 4 AI-generated faces passed** in the end-to-end test.
 - **AI art is mostly missed** at the default threshold.
-- **The samples are small.** Most of the fake faces come from one generator, and the test videos are slideshows of still images rather than real footage.
+- **The evidence has gaps.** Most of the fake faces come from one generator, the public figures use single images, and the end-to-end test videos are slideshows of still images rather than real footage.
 - **Audio is not analysed.**
 - **No C2PA trust list is configured yet,** so signatures are checked for integrity but signers are not verified.
-- **Uploads are not scanned for malware yet.** In the local version they are also not deleted automatically. The AWS version deletes them after one day.
+- **The malware scan has limits.** ClamAV's signatures are only as fresh as the last deploy, and it will not reliably catch a file built to exploit a bug in an image or video parser. The worker's network limits and non-root user are the defence against that.
+- **Local uploads are not deleted automatically.** The AWS version deletes them after one day.
 
 ## Repository structure
 
@@ -238,6 +263,7 @@ trueframe/
   scripts/        pushes images by hand and verifies a release
   localstack/     creates the local bucket, queues and table
   tests/          unit and end-to-end tests
+  evals/          measures the detector on public datasets
   docker-compose.yml
 ```
 
@@ -246,7 +272,7 @@ trueframe/
 - [x] Stage 1: application running locally
 - [x] Stage 2: AWS with Terraform (ECS Fargate, private networking with VPC endpoints, load balancer, HTTPS, WAF)
 - [x] Stage 3: CI/CD and security (GitHub Actions with OIDC, Trivy, Checkov, signed images, SBOMs, blue/green deployments)
-- [ ] Stage 4: LLM report summaries on Amazon Bedrock with Guardrails, plus a full evaluation on public datasets
+- [ ] Stage 4: malware scanning of every upload with ClamAV, plus a full evaluation on public datasets
 - [ ] Stage 5: operations (scale to zero, dashboards, alarms, chaos testing, budget alerts, demo video)
 - [ ] Better coverage of face swaps and AI art
 
