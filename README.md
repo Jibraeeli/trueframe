@@ -123,6 +123,8 @@ Both automatic rollback paths were tested on the live service.
 
 In both cases the service ended on the original version and the health endpoint returned 200. The alarm in the second drill was triggered by hand, to test the rollback rather than the alarm's threshold.
 
+![ECS deployment history showing two successful releases and the two rollback drills](docs/screenshots/aws-rollback-drills.png)
+
 The pipeline's image scan also earned its place on the first run: it failed both images on a high-severity zlib vulnerability inherited from the Python base image, which led to the security update step in the Dockerfiles.
 
 ## Running locally
